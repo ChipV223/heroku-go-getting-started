@@ -8,7 +8,7 @@ import (
     "strconv"
     "database/sql"
     "time"
-    "log"
+    "fmt"
 
     "github.com/gin-gonic/gin"
     _ "github.com/heroku/x/hmetrics/onload"
