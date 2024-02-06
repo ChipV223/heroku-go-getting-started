@@ -94,7 +94,7 @@ func main() {
 
 	router.GET("/repeat", repeatHandler(repeat))
 
-	//router.GET("/db", dbFunc(db))
+	router.GET("/db", dbFunc(db))
 
 	router.Run(":" + port)
 }
