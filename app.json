@@ -8,5 +8,11 @@
     "example"
   ],
   "website": "https://github.com/heroku/go-getting-started",
-  "repository": "https://github.com/heroku/go-getting-started"
+  "repository": "https://github.com/heroku/go-getting-started",
+  "addons": ["heroku-postgresql:standard-0"],
+  "environments": {
+    "review": {
+      "addons": ["heroku-postgresql:essential-0"]
+      }
+   }
 }
