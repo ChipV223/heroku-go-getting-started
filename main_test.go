@@ -1,12 +1,16 @@
 package main
 
 import (
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gin-gonic/gin"
 )
 
@@ -201,6 +205,156 @@ func TestRepeatHandler(t *testing.T) {
 		}
 		if strings.Count(w.Body.String(), "Hello from Go!") != 3 {
 			t.Fatalf("body: %q, want 3 lines", w.Body.String())
+		}
+	})
+}
+
+// TestDbFunc exercises dbFunc with a mock database and the way newRouterForDB registers /db.
+func TestDbFunc(t *testing.T) {
+	execSQL := func(s string) string { return regexp.QuoteMeta(s) }
+	wantTick := time.Date(2020, 4, 1, 12, 0, 0, 0, time.UTC)
+	succeededRows := func() *sqlmock.Rows {
+		return sqlmock.NewRows([]string{"tick"}).AddRow(wantTick)
+	}
+
+	t.Run("200 with Read from DB on happy path", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("sqlmock: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+
+		mock.ExpectExec(execSQL(sqlCreateTicks)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec(execSQL(sqlInsertTick)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(execSQL(sqlSelectTicks)).WillReturnRows(succeededRows())
+
+		eng := gin.New()
+		eng.GET("/db", dbFunc(db))
+		w := httptest.NewRecorder()
+		eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/db", nil))
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+		}
+		if !strings.HasPrefix(w.Body.String(), "Read from DB: ") {
+			t.Fatalf("body: %q", w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "2020-") {
+			t.Fatalf("body should include formatted time, got: %q", w.Body.String())
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("expectations: %v", err)
+		}
+	})
+
+	t.Run("500 when create table fails", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("sqlmock: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+
+		mock.ExpectExec(execSQL(sqlCreateTicks)).WillReturnError(sql.ErrConnDone)
+
+		eng := gin.New()
+		eng.GET("/db", dbFunc(db))
+		w := httptest.NewRecorder()
+		eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/db", nil))
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("status: %d", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), "Error creating database table") {
+			t.Fatalf("body: %q", w.Body.String())
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("expectations: %v", err)
+		}
+	})
+
+	t.Run("500 when insert fails", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("sqlmock: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+
+		mock.ExpectExec(execSQL(sqlCreateTicks)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec(execSQL(sqlInsertTick)).WillReturnError(sql.ErrTxDone)
+
+		eng := gin.New()
+		eng.GET("/db", dbFunc(db))
+		w := httptest.NewRecorder()
+		eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/db", nil))
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("status: %d", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), "Error incrementing tick") {
+			t.Fatalf("body: %q", w.Body.String())
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("expectations: %v", err)
+		}
+	})
+
+	t.Run("500 when select fails", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("sqlmock: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+
+		mock.ExpectExec(execSQL(sqlCreateTicks)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec(execSQL(sqlInsertTick)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(execSQL(sqlSelectTicks)).WillReturnError(sql.ErrNoRows)
+
+		eng := gin.New()
+		eng.GET("/db", dbFunc(db))
+		w := httptest.NewRecorder()
+		eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/db", nil))
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("status: %d", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), "Error reading ticks") {
+			t.Fatalf("body: %q", w.Body.String())
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("expectations: %v", err)
+		}
+	})
+
+	t.Run("500 when row scan fails", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("sqlmock: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+
+		rows := sqlmock.NewRows([]string{"tick"}).AddRow("not-a-timestamp")
+		mock.ExpectExec(execSQL(sqlCreateTicks)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec(execSQL(sqlInsertTick)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery(execSQL(sqlSelectTicks)).WillReturnRows(rows)
+
+		eng := gin.New()
+		eng.GET("/db", dbFunc(db))
+		w := httptest.NewRecorder()
+		eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/db", nil))
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("status: %d: %q", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "Error scanning ticks") {
+			t.Fatalf("body: %q", w.Body.String())
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("expectations: %v", err)
+		}
+	})
+
+	t.Run("newRouterForDB with nil has no /db route", func(t *testing.T) {
+		eng := newRouterForDB(nil)
+		w := httptest.NewRecorder()
+		eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/db", nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d, body: %q", w.Code, w.Body.String())
 		}
 	})
 }
