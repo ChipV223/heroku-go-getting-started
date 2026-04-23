@@ -4,8 +4,10 @@ module github.com/heroku/go-getting-started
 go 1.25.0
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/gin-gonic/gin v1.12.0
 	github.com/heroku/x v0.5.3
+	github.com/lib/pq v1.12.3
 	github.com/russross/blackfriday v2.0.0+incompatible
 )
 
