@@ -125,6 +125,86 @@ func TestHandleMark(t *testing.T) {
 	})
 }
 
+// TestRepeatHandler is a focused suite for repeatHandler, buildRepeatGreeting, and the /repeat route
+// as wired by newRouter + REPEAT.
+func TestRepeatHandler(t *testing.T) {
+	t.Run("buildRepeatGreeting is empty for zero lines", func(t *testing.T) {
+		if got := buildRepeatGreeting(0); got != "" {
+			t.Fatalf("buildRepeatGreeting(0) = %q, want empty", got)
+		}
+	})
+
+	t.Run("buildRepeatGreeting treats negative as zero", func(t *testing.T) {
+		if got := buildRepeatGreeting(-3); got != "" {
+			t.Fatalf("buildRepeatGreeting(-3) = %q, want empty", got)
+		}
+	})
+
+	t.Run("buildRepeatGreeting emits one line", func(t *testing.T) {
+		got := buildRepeatGreeting(1)
+		want := "Hello from Go!\n"
+		if got != want {
+			t.Fatalf("buildRepeatGreeting(1) = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("buildRepeatGreeting emits n newline-terminated lines", func(t *testing.T) {
+		n := 4
+		body := buildRepeatGreeting(n)
+		if c := strings.Count(body, "Hello from Go!"); c != n {
+			t.Fatalf("greeting line count: got %d, want %d, body: %q", c, n, body)
+		}
+		lines := strings.Count(body, "\n")
+		if lines != n {
+			t.Fatalf("newline count: got %d, want %d, body: %q", lines, n, body)
+		}
+	})
+
+	t.Run("repeatHandler zero yields 200 and empty text body", func(t *testing.T) {
+		eng := gin.New()
+		eng.GET("/h", repeatHandler(0))
+		w := httptest.NewRecorder()
+		eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/h", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: %d", w.Code)
+		}
+		if w.Body.String() != "" {
+			t.Fatalf("body: %q, want empty", w.Body.String())
+		}
+		ct := w.Result().Header.Get("Content-Type")
+		if !strings.HasPrefix(ct, "text/") {
+			t.Fatalf("Content-Type: %q, want text/*", ct)
+		}
+	})
+
+	t.Run("repeatHandler two returns two greeting lines as plain text", func(t *testing.T) {
+		eng := gin.New()
+		eng.GET("/h", repeatHandler(2))
+		w := httptest.NewRecorder()
+		eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/h", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: %d", w.Code)
+		}
+		want := "Hello from Go!\n" + "Hello from Go!\n"
+		if w.Body.String() != want {
+			t.Fatalf("body = %q, want %q", w.Body.String(), want)
+		}
+	})
+
+	t.Run("newRouter GET /repeat uses REPEAT env for line count", func(t *testing.T) {
+		t.Setenv("REPEAT", "3")
+		eng := newRouter()
+		w := httptest.NewRecorder()
+		eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/repeat", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET /repeat: %d, body: %q", w.Code, w.Body.String())
+		}
+		if strings.Count(w.Body.String(), "Hello from Go!") != 3 {
+			t.Fatalf("body: %q, want 3 lines", w.Body.String())
+		}
+	})
+}
+
 func TestRunApp(t *testing.T) {
 	t.Run("fails when PORT is not set", func(t *testing.T) {
 		t.Setenv("PORT", "")
