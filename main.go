@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/heroku/x/hmetrics/onload"
@@ -49,7 +51,7 @@ func repeatCountFromEnv() int {
 
 // dbFunc returns a handler that creates the ticks table, inserts a row, and prints stored timestamps.
 // It is intended for use with a Postgres *sql.DB; tests may pass a *sql.DB backed by sqlmock.
-/*func dbFunc(db *sql.DB) gin.HandlerFunc {
+func dbFunc(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if _, err := db.Exec(sqlCreateTicks); err != nil {
 			c.String(http.StatusInternalServerError,
@@ -81,7 +83,7 @@ func repeatCountFromEnv() int {
 			c.String(http.StatusOK, fmt.Sprintf("Read from DB: %s\n", tick.String()))
 		}
 	}
-}*/
+}
 
 // repeatHandler returns a Gin handler that writes buildRepeatGreeting(r) with status 200.
 func repeatHandler(r int) gin.HandlerFunc {
@@ -119,9 +121,9 @@ func newRouterForDB(db *sql.DB) *gin.Engine {
 	router.GET("/", handleIndex)
 	router.GET("/mark", handleMark)
 	router.GET("/repeat", repeatHandler(repeatCountFromEnv()))
-	/*if db != nil {
+	if db != nil {
 		router.GET("/db", dbFunc(db))
-	}*/
+	}
 	return router
 }
 
